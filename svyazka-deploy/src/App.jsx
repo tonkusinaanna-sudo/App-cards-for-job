@@ -4,7 +4,7 @@ import {
   Workflow, Table, LayoutGrid, Wallet, ListTodo, Users, BookOpen,
   Search, Plus, X, Trash2, Filter, ArrowRight, Sparkles,
   MessageCircle, Clock, TrendingUp, StickyNote, Square, Download, Link2,
-  RefreshCw, ArrowDownLeft, ArrowUpRight, Copy, Check, LayoutDashboard,
+  RefreshCw, ArrowDownLeft, ArrowUpRight, Copy, Check, LayoutDashboard, Menu,
 } from "lucide-react";
 
 const STATUS = {
@@ -71,6 +71,7 @@ const store = {
 
 export default function App() {
   const [nav, setNav] = useState("dash");
+  const [sidebarOpen, setSidebarOpen] = useState(false);
   const [view, setView] = useState("table");
   const [q, setQ] = useState("");
   const [geo, setGeo] = useState("all");
@@ -142,19 +143,26 @@ export default function App() {
     <div className="app">
       <style>{CSS}</style>
 
-      <aside className="sidebar">
+      <div className="mtopbar">
+        <button className="menu-btn" onClick={() => setSidebarOpen(true)} aria-label="Меню"><Menu size={20} /></button>
+        <div className="mtopbar-brand"><div className="brand-mark sm"><Sparkles size={13} /></div> Связка</div>
+      </div>
+      {sidebarOpen && <div className="backdrop" onClick={() => setSidebarOpen(false)} />}
+
+      <aside className={"sidebar" + (sidebarOpen ? " open" : "")}>
         <div className="brand">
           <div className="brand-mark"><Sparkles size={16} /></div>
           <div>
             <div className="brand-name">Связка</div>
             <div className="brand-sub">processing ops</div>
           </div>
+          <button className="side-close" onClick={() => setSidebarOpen(false)} aria-label="Закрыть"><X size={18} /></button>
         </div>
         <nav className="nav">
           {NAV.map((n) => {
             const I = n.icon;
             return (
-              <button key={n.key} className={"nav-item" + (nav === n.key ? " on" : "")} onClick={() => setNav(n.key)}>
+              <button key={n.key} className={"nav-item" + (nav === n.key ? " on" : "")} onClick={() => { setNav(n.key); setSidebarOpen(false); }}>
                 <I size={17} /> <span>{n.label}</span>
                 {n.key === "registry" && <em className="nav-count">{rows.length}</em>}
               </button>
@@ -435,6 +443,14 @@ const nodeW = (n) => {
   return Math.min(230, Math.max(94, n.label.length * 7.4 + base));
 };
 
+// точка на границе пилюли узла в направлении (tx,ty) — чтобы линия/стрелка упиралась в край, а не в центр
+const edgePoint = (n, tx, ty, pad = 4) => {
+  const rx = nodeW(n) / 2 + pad, ry = (n.type === "geo" ? 44 : 34) / 2 + pad;
+  const ang = Math.atan2(ty - n.y, tx - n.x);
+  const r = (rx * ry) / Math.sqrt((ry * Math.cos(ang)) ** 2 + (rx * Math.sin(ang)) ** 2);
+  return { x: n.x + Math.cos(ang) * r, y: n.y + Math.sin(ang) * r };
+};
+
 const NOTE_COLORS = ["#caa14a", "#4a9e8f", "#a86bd1", "#5b7fd1", "#cf6b6b"];
 const FRAME_COLORS = ["#818cf8", "#2dd4bf", "#a78bfa", "#f0883e", "#8b949e"];
 
@@ -459,7 +475,7 @@ function CanvasView({ rows, onOpenRow, onAddRow, onCreate }) {
   const [selExtra, setSelExtra] = useState(null);
   const [q, setQ] = useState("");
   const [collapsed, setCollapsed] = useState(() => new Set());
-  const [showDeals, setShowDeals] = useState(false);
+  const [showDeals, setShowDeals] = useState(true);
   const [panelNode, setPanelNode] = useState(null);
   const [addMenu, setAddMenu] = useState(false);
   const [linkSrc, setLinkSrc] = useState(null);
@@ -494,7 +510,6 @@ function CanvasView({ rows, onOpenRow, onAddRow, onCreate }) {
       if (saved && saved.pos) {
         savedRef.current = saved;
         if (Array.isArray(saved.collapsed)) setCollapsed(new Set(saved.collapsed));
-        if (typeof saved.showDeals === "boolean") setShowDeals(saved.showDeals);
       }
       const ex = await store.get("canvas:extras", null);
       if (Array.isArray(ex)) setExtras(ex);
@@ -747,6 +762,14 @@ function CanvasView({ rows, onOpenRow, onAddRow, onCreate }) {
 
       <div className="stage" ref={stageRef}>
         <svg ref={svgRef} onPointerDown={onBgDown} onPointerMove={onMove} onPointerUp={onUp} onPointerLeave={onUp}>
+          <defs>
+            <marker id="arrowDeal" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+              <path d="M0,0 L10,5 L0,10 z" fill="#f0b232" />
+            </marker>
+            <marker id="arrowDealOn" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+              <path d="M0,0 L10,5 L0,10 z" fill="#ffd166" />
+            </marker>
+          </defs>
           <g transform={`translate(${view.x},${view.y}) scale(${view.k})`}>
             {extras.filter((x) => x.kind === "frame").map((f) => (
               <g key={f.id}>
@@ -762,16 +785,26 @@ function CanvasView({ rows, onOpenRow, onAddRow, onCreate }) {
               const active = highlight && (highlight.has(e.from) || highlight.has(e.to));
               const dim = highlight && !active;
               return <line key={i} x1={a.x} y1={a.y} x2={b.x} y2={b.y}
-                stroke={active ? NTYPE[b.type].color : "rgba(255,255,255,.13)"}
-                strokeWidth={active ? 2 : 1.2} style={{ opacity: dim ? 0.18 : 1 }} />;
+                stroke={active ? NTYPE[b.type].color : "rgba(255,255,255,.10)"}
+                strokeWidth={active ? 2 : 1} strokeDasharray={active ? "none" : "2 5"}
+                style={{ opacity: dim ? 0.18 : 1 }} />;
             })}
             {showDeals && deals.map((d, i) => {
               const a = byId[d.from], b = byId[d.to]; if (!a || !b || hidden(a) || hidden(b)) return null;
               const active = highlight && (highlight.has(d.from) || highlight.has(d.to));
               const dim = highlight && !active;
-              return <line key={"d" + i} x1={a.x} y1={a.y} x2={b.x} y2={b.y}
-                stroke={active ? "#d29922" : "rgba(210,153,34,.5)"} strokeWidth={active ? 2 : 1.5}
-                strokeDasharray="5 4" style={{ opacity: dim ? 0.14 : 1 }} />;
+              const p1 = edgePoint(a, b.x, b.y), p2 = edgePoint(b, a.x, a.y);
+              const mx = (p1.x + p2.x) / 2, my = (p1.y + p2.y) / 2;
+              const dx = p2.x - p1.x, dy = p2.y - p1.y, len = Math.hypot(dx, dy) || 1;
+              const off = Math.min(46, len * 0.14);
+              const cx = mx + (-dy / len) * off, cy = my + (dx / len) * off;
+              const path = `M ${p1.x} ${p1.y} Q ${cx} ${cy} ${p2.x} ${p2.y}`;
+              return (
+                <g key={"d" + i} style={{ opacity: dim ? 0.12 : 1 }}>
+                  <path d={path} fill="none" stroke={active ? "#ffd166" : "#f0b232"} strokeWidth={active ? 2.6 : 2}
+                    strokeLinecap="round" markerEnd={active ? "url(#arrowDealOn)" : "url(#arrowDeal)"} />
+                </g>
+              );
             })}
             {nodes.filter((n) => !hidden(n)).map((n) => {
               const w = nodeW(n), h = n.type === "geo" ? 44 : 34;
@@ -881,6 +914,7 @@ function CanvasView({ rows, onOpenRow, onAddRow, onCreate }) {
           {Object.entries(NTYPE).map(([k, t]) => (
             <span key={k}><i style={{ background: t.color }} />{t.label}</span>
           ))}
+          <span className="legend-deal"><b style={{ background: "#f0b232" }} />Связка → поток</span>
         </div>
         <span className="cv-hint">Клик по объекту — его связки · «Добавить» — связка/заметка/рамка/связать · перетаскивай всё · PNG — снимок · мини-карта справа внизу</span>
       </div>
@@ -2273,6 +2307,36 @@ tbody tr:hover { background:var(--panel); }
 .dash-total b { font-family:'IBM Plex Mono',monospace; color:var(--tx); }
 .dash-empty { color:var(--mut2); font-size:13px; padding:14px 4px; }
 @media (max-width:880px) { .dash-grid { grid-template-columns:1fr; } }
+
+/* --- мобильная навигация (на десктопе скрыто) --- */
+.mtopbar { display:none; }
+.menu-btn { display:inline-flex; align-items:center; justify-content:center; background:none; border:none; color:var(--tx); cursor:pointer; padding:6px; border-radius:8px; }
+.menu-btn:hover { background:var(--panel2); }
+.mtopbar-brand { display:flex; align-items:center; gap:8px; font-weight:700; }
+.brand-mark.sm { width:24px; height:24px; border-radius:7px; }
+.backdrop { display:none; }
+.side-close { display:none; background:none; border:none; color:var(--mut); cursor:pointer; margin-left:auto; padding:4px; }
+.side-close:hover { color:var(--tx); }
+
+@media (max-width:760px) {
+  .mtopbar { display:flex; align-items:center; gap:10px; position:absolute; top:0; left:0; right:0; height:52px; padding:0 12px; background:var(--panel); border-bottom:1px solid var(--line); z-index:30; }
+  .backdrop { display:block; position:absolute; inset:0; background:rgba(0,0,0,.55); z-index:55; }
+  .sidebar { position:absolute; top:0; left:0; bottom:0; width:250px; z-index:60; transform:translateX(-100%); transition:transform .22s ease; box-shadow:2px 0 24px rgba(0,0,0,.45); }
+  .sidebar.open { transform:translateX(0); }
+  .side-close { display:inline-flex; }
+  .main { padding:66px 14px 18px; }
+  .top { flex-direction:column; gap:12px; align-items:stretch; }
+  .top .btn { align-self:flex-start; }
+  .stats { grid-template-columns:repeat(2,1fr); gap:10px; }
+  .toolbar, .fin-tb { flex-direction:column; align-items:stretch; gap:10px; }
+  .seg { width:100%; }
+  .seg button { flex:1; justify-content:center; }
+  .chips { flex-wrap:wrap; }
+  .tablewrap { overflow-x:auto; }
+  .crm-grid { grid-template-columns:1fr; }
+  .tk-board { grid-template-columns:1fr; gap:10px; }
+  .modal-bg { padding:12px; }
+}
 .cv-zoom { display:flex; align-items:center; background:var(--panel); border:1px solid var(--line); border-radius:9px; overflow:hidden; }
 .cv-zoom button { width:34px; height:34px; border:none; background:none; color:var(--tx); font-size:18px; cursor:pointer; }
 .cv-zoom button:hover { background:var(--panel2); }
@@ -2284,5 +2348,6 @@ tbody tr:hover { background:var(--panel); }
 .cv-foot { display:flex; justify-content:space-between; align-items:center; gap:14px; flex-wrap:wrap; }
 .legend { display:flex; gap:15px; flex-wrap:wrap; font-size:12.5px; color:var(--mut); }
 .legend i { width:9px; height:9px; border-radius:50%; display:inline-block; margin-right:6px; vertical-align:middle; }
+.legend-deal b { width:16px; height:3px; border-radius:2px; display:inline-block; margin-right:6px; vertical-align:middle; }
 .cv-hint { font-size:12px; color:var(--mut2); }
 `;
