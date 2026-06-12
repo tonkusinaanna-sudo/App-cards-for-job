@@ -1,0 +1,11 @@
+html, body, #root { height: 100%; margin: 0; }
+body { background: #0b0d12; }
+
+/* На сайте приложение разворачивается во весь экран
+   (в Claude оно остаётся карточкой — там этот файл не подключается). */
+#root > .app {
+  height: 100vh;
+  max-height: none;
+  border-radius: 0;
+  border: none;
+}
