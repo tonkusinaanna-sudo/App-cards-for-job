@@ -287,7 +287,8 @@ function LockScreen({ onUnlock }) {
           </div>
         </div>
         <p className="lock-text">Введите пароль для входа</p>
-        <input className={"lock-input" + (err ? " err" : "")} type="password" value={pw} autoFocus
+        <input className={"lock-input" + (err ? " err" : "")} type="text" value={pw} autoFocus
+          inputMode="numeric" pattern="[0-9]*" autoComplete="off"
           onChange={(e) => { setPw(e.target.value); setErr(false); }}
           onKeyDown={(e) => { if (e.key === "Enter") submit(); }}
           placeholder="Пароль" />
