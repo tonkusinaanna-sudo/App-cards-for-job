@@ -49,6 +49,7 @@ const PLACEHOLDERS = {
 };
 
 const fmt = (n) => new Intl.NumberFormat("ru-RU").format(n);
+const numVal = (v) => { if (v === "" || v == null) return 0; const n = parseFloat(String(v).replace(",", ".")); return isNaN(n) ? 0 : n; };
 const fmtShort = (n) => n >= 1000000 ? (n / 1000000).toFixed(1).replace(".0", "") + "M" : fmt(n);
 
 // ===== Общая база (Supabase). Все устройства видят одни данные =====
@@ -104,7 +105,6 @@ export default function App() {
   const [showAdd, setShowAdd] = useState(false);
   const [sel, setSel] = useState(null);
   const [ready, setReady] = useState(false);
-  const [syncTick, setSyncTick] = useState(0);
 
   useEffect(() => {
     (async () => {
@@ -112,16 +112,8 @@ export default function App() {
       if (Array.isArray(saved) && saved.length) setRows(saved);
       setReady(true);
     })();
-  }, [syncTick]);
-  useEffect(() => { if (ready) store.set("registry:rows", rows); }, [rows, ready]);
-
-  useEffect(() => {
-    if (!store.cloud()) return;
-    const bump = () => { if (document.visibilityState === "visible") setSyncTick((t) => t + 1); };
-    window.addEventListener("focus", bump);
-    document.addEventListener("visibilitychange", bump);
-    return () => { window.removeEventListener("focus", bump); document.removeEventListener("visibilitychange", bump); };
   }, []);
+  useEffect(() => { if (ready) store.set("registry:rows", rows); }, [rows, ready]);
 
   const geos = useMemo(() => [...new Set(rows.map((r) => r.geo))], [rows]);
 
@@ -137,7 +129,7 @@ export default function App() {
 
   const stats = useMemo(() => {
     const active = rows.filter((r) => r.status === "gas").length;
-    const turn = rows.reduce((s, r) => s + r.turn, 0);
+    const turn = rows.reduce((s, r) => s + numVal(r.turn), 0);
     return { total: rows.length, active, turn, geos: geos.length };
   }, [rows, geos]);
 
@@ -246,12 +238,12 @@ export default function App() {
             )}
           </>
         ) : (
-          nav === "dash" ? <DashboardView key={"dash" + syncTick} rows={rows} onOpenRow={setSel} onGo={setNav} />
+          nav === "dash" ? <DashboardView rows={rows} onOpenRow={setSel} onGo={setNav} />
             : nav === "canvas" ? <CanvasView rows={rows} onOpenRow={setSel} onAddRow={() => setShowAdd(true)} onCreate={createRow} />
-            : nav === "finance" ? <FinanceView key={"fin" + syncTick} rows={rows} />
-              : nav === "tasks" ? <TasksView key={"tasks" + syncTick} />
-                : nav === "crm" ? <CRMView key={"crm" + syncTick} rows={rows} />
-                  : nav === "kb" ? <KBView key={"kb" + syncTick} />
+            : nav === "finance" ? <FinanceView rows={rows} />
+              : nav === "tasks" ? <TasksView />
+                : nav === "crm" ? <CRMView rows={rows} />
+                  : nav === "kb" ? <KBView />
                     : <Placeholder {...PLACEHOLDERS[nav]} />
         )}
       </main>
@@ -363,7 +355,7 @@ function TableView({ rows, onStatus, onDel, onOpen }) {
                 {r.link ? <a className="ext" href={extUrl(r.link)} target="_blank" rel="noreferrer">{r.link}</a> : <span className="muted">—</span>}
               </td>
               <td className="num mono">{r.com}%</td>
-              <td className="num mono">{r.turn ? fmt(r.turn) : "—"}</td>
+              <td className="num mono">{numVal(r.turn) ? fmt(numVal(r.turn)) : "—"}</td>
               <td onClick={(e) => e.stopPropagation()}><StatusPill status={r.status} onChange={(s) => onStatus(r.id, s)} /></td>
               <td className="mono">{r.owner}</td>
               <td onClick={(e) => e.stopPropagation()}><button className="icon-btn" onClick={() => onDel(r.id)}><Trash2 size={14} /></button></td>
@@ -1034,10 +1026,10 @@ function CanvasNodePanel({ node, list, onOpenRow, onClose }) {
 
 function DetailDrawer({ row, onClose, onUpdate, onStatus, onDel }) {
   const up = (k, v) => onUpdate(row.id, { [k]: v });
-  const income = Math.round((row.turn * row.com) / 100);
+  const income = Math.round((numVal(row.turn) * numVal(row.com)) / 100);
   const log = row.log || [];
   return (
-    <div className="drawer-bg" onClick={onClose}>
+    <div className="drawer-bg">
       <div className="drawer" onClick={(e) => e.stopPropagation()}>
         <div className="dr-head">
           <button className="dr-back" onClick={onClose}>← Назад</button>
@@ -1060,14 +1052,14 @@ function DetailDrawer({ row, onClose, onUpdate, onStatus, onDel }) {
           <DSection title="Параметры">
             <div className="dr-grid">
               <DField label="Метод" value={row.method} onChange={(v) => up("method", v)} />
-              <DField label="Комиссия %" type="number" step="any" value={row.com} onChange={(v) => up("com", parseFloat(v) || 0)} />
+              <DField label="Комиссия %" type="number" value={row.com} onChange={(v) => up("com", v)} />
               <DField label="Ссылка" value={row.link || ""} placeholder="t.me/… или site.com" onChange={(v) => up("link", v)} />
             </div>
           </DSection>
 
           <DSection title="Финансы">
             <div className="dr-grid">
-              <DField label="Оборот" type="number" value={row.turn} onChange={(v) => up("turn", +v)} />
+              <DField label="Оборот" type="number" value={row.turn} onChange={(v) => up("turn", v)} />
               <div className="readout">
                 <span className="dr-lbl"><TrendingUp size={13} /> Комиссионный доход</span>
                 <span className="dr-val mono">{fmt(income)}</span>
@@ -1112,6 +1104,15 @@ function DSection({ title, children }) {
 }
 
 function DField({ label, value, onChange, type = "text", placeholder, icon: Icon, step }) {
+  if (type === "number") {
+    return (
+      <label className="dr-field">
+        <span className="dr-lbl">{Icon && <Icon size={13} />}{label}</span>
+        <input type="text" inputMode="decimal" value={value === 0 || value == null ? "" : String(value)} placeholder={placeholder || "0"}
+          onChange={(e) => onChange(e.target.value.replace(/[^\d.,]/g, "").replace(",", "."))} />
+      </label>
+    );
+  }
   return (
     <label className="dr-field">
       <span className="dr-lbl">{Icon && <Icon size={13} />}{label}</span>
@@ -1343,7 +1344,7 @@ function FinModal({ initial, parties, onClose, onSave }) {
   const up = (k, v) => setF((s) => ({ ...s, [k]: v }));
   const ok = f.party.trim() && Number(f.amount) > 0;
   return (
-    <div className="modal-bg" onClick={onClose}>
+    <div className="modal-bg">
       <div className="modal" onClick={(e) => e.stopPropagation()}>
         <div className="modal-head">
           <h3>{isEdit ? "Платёж" : "Новый платёж"}</h3>
@@ -1745,7 +1746,7 @@ function OfferModal({ initial, onClose, onSave }) {
   const up = (k, v) => setF((s) => ({ ...s, [k]: v }));
   const ok = f.name.trim();
   return (
-    <div className="modal-bg" onClick={onClose}>
+    <div className="modal-bg">
       <div className="modal" onClick={(e) => e.stopPropagation()}>
         <div className="modal-head">
           <h3>{isEdit ? "Оффер" : "Новый оффер"}</h3>
@@ -1960,7 +1961,7 @@ function CrmModal({ initial, orgs, onClose, onSave }) {
   const up = (k, v) => setF((s) => ({ ...s, [k]: v }));
   const ok = f.name.trim();
   return (
-    <div className="modal-bg" onClick={onClose}>
+    <div className="modal-bg">
       <div className="modal" onClick={(e) => e.stopPropagation()}>
         <div className="modal-head">
           <h3>{isEdit ? "Контакт" : "Новый контакт"}</h3>
@@ -1999,7 +2000,7 @@ function AddModal({ onClose, onAdd }) {
   const up = (k, v) => setF((s) => ({ ...s, [k]: v }));
   const ok = [f.pay, f.casino, f.trader].some((x) => x.trim());
   return (
-    <div className="modal-bg" onClick={onClose}>
+    <div className="modal-bg">
       <div className="modal" onClick={(e) => e.stopPropagation()}>
         <div className="modal-head">
           <h3>Новая связка</h3>
@@ -2015,7 +2016,7 @@ function AddModal({ onClose, onAdd }) {
             <Field label="Метод"><input value={f.method} onChange={(e) => up("method", e.target.value)} /></Field>
           </div>
           <div className="form-row">
-            <Field label="Комиссия %"><input type="number" step="any" value={f.com} onChange={(e) => up("com", parseFloat(e.target.value) || 0)} /></Field>
+            <Field label="Комиссия %"><input type="text" inputMode="decimal" value={f.com === 0 ? "" : f.com} placeholder="0" onChange={(e) => up("com", e.target.value.replace(/[^\d.,]/g, "").replace(",", "."))} /></Field>
             <Field label="Контакт"><input value={f.owner} onChange={(e) => up("owner", e.target.value)} placeholder="@telegram" /></Field>
           </div>
           <Field label="Ссылка"><input value={f.link} onChange={(e) => up("link", e.target.value)} placeholder="t.me/… или site.com" /></Field>
