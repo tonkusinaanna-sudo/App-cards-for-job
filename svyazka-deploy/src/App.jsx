@@ -518,10 +518,13 @@ function CanvasView({ rows, onOpenRow, onAddRow, onCreate }) {
   const [panelNode, setPanelNode] = useState(null);
   const [addMenu, setAddMenu] = useState(false);
   const [linkSrc, setLinkSrc] = useState(null);
+  const [toolsOpen, setToolsOpen] = useState(false);
   const [stageSize, setStageSize] = useState({ w: 800, h: 520 });
   const svgRef = useRef(null);
   const stageRef = useRef(null);
   const drag = useRef(null);
+  const pointers = useRef(new Map());
+  const pinch = useRef(null);
   const savedRef = useRef(null);
   const readyRef = useRef(false);
   const debRef = useRef(null);
@@ -675,8 +678,32 @@ function CanvasView({ rows, onOpenRow, onAddRow, onCreate }) {
     drag.current = { resize: id, x0: x.x, y0: x.y, moved: true };
     e.currentTarget.setPointerCapture?.(e.pointerId);
   };
-  const onBgDown = (e) => { drag.current = { pan: true, sx: e.clientX, sy: e.clientY, vx: view.x, vy: view.y, moved: false }; };
+  const onBgDown = (e) => {
+    pointers.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    e.currentTarget.setPointerCapture?.(e.pointerId);
+    if (pointers.current.size === 2) {
+      const pts = [...pointers.current.values()];
+      const dist = Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y) || 1;
+      const r = svgRef.current.getBoundingClientRect();
+      const mid = { x: (pts[0].x + pts[1].x) / 2 - r.left, y: (pts[0].y + pts[1].y) / 2 - r.top };
+      pinch.current = { dist, view: { ...view } };
+      drag.current = null;
+    } else {
+      drag.current = { pan: true, sx: e.clientX, sy: e.clientY, vx: view.x, vy: view.y, moved: false };
+    }
+  };
   const onMove = (e) => {
+    if (pointers.current.has(e.pointerId)) pointers.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    if (pinch.current && pointers.current.size >= 2) {
+      const pts = [...pointers.current.values()];
+      const dist = Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y) || 1;
+      const r = svgRef.current.getBoundingClientRect();
+      const mid = { x: (pts[0].x + pts[1].x) / 2 - r.left, y: (pts[0].y + pts[1].y) / 2 - r.top };
+      const p = pinch.current;
+      const k = Math.min(2.4, Math.max(0.15, p.view.k * (dist / p.dist)));
+      setView({ k, x: mid.x - ((mid.x - p.view.x) / p.view.k) * k, y: mid.y - ((mid.y - p.view.y) / p.view.k) * k });
+      return;
+    }
     const d = drag.current; if (!d) return;
     const far = Math.abs(e.clientX - d.sx) + Math.abs(e.clientY - d.sy) > 4;
     if (d.pan) {
@@ -692,7 +719,10 @@ function CanvasView({ rows, onOpenRow, onAddRow, onCreate }) {
       setNodes((ns) => ns.map((n) => (n.id === d.id ? { ...n, x: pt.x - d.dx, y: pt.y - d.dy } : n)));
     }
   };
-  const onUp = () => {
+  const onUp = (e) => {
+    if (e && e.pointerId != null && pointers.current.has(e.pointerId)) pointers.current.delete(e.pointerId);
+    if (pointers.current.size < 2) pinch.current = null;
+    if (pointers.current.size > 0) { drag.current = null; return; }
     const d = drag.current;
     if (d && !d.moved) {
       if (d.pan) { setSel(null); setSelExtra(null); setLinkSrc(null); }
@@ -757,7 +787,8 @@ function CanvasView({ rows, onOpenRow, onAddRow, onCreate }) {
           <h1>Канвас</h1>
           <p className="sub">Карта строится из реестра: гео в центре, связи к платёжкам, казино и трейдерам</p>
         </div>
-        <div className="cv-tools">
+        <button className="cv-toolstoggle" onClick={() => setToolsOpen((v) => !v)}>{toolsOpen ? <X size={16} /> : <Menu size={16} />} Инструменты</button>
+        <div className={"cv-tools" + (toolsOpen ? " open" : "")}>
           <div className="cv-search">
             <Search size={15} />
             <input
@@ -2189,6 +2220,7 @@ tbody tr:hover { background:var(--panel); }
 .cv-top { display:flex; justify-content:space-between; align-items:flex-start; gap:12px; flex-wrap:wrap; }
 .cv-top h1 { margin:0; font-size:21px; font-weight:700; letter-spacing:-.4px; }
 .cv-tools { display:flex; align-items:center; gap:9px; flex-wrap:wrap; }
+.cv-toolstoggle { display:none; }
 .cv-search { display:flex; align-items:center; gap:8px; background:var(--panel); border:1px solid var(--line); border-radius:9px; padding:0 11px; color:var(--mut); height:36px; }
 .cv-search input { width:160px; background:none; border:none; outline:none; color:var(--tx); font:inherit; font-size:13px; padding:9px 0; }
 .cv-search input::placeholder { color:var(--mut2); }
@@ -2387,6 +2419,18 @@ tbody tr:hover { background:var(--panel); }
   .crm-grid { grid-template-columns:1fr; }
   .tk-board { grid-template-columns:1fr; gap:10px; }
   .modal-bg { padding:12px; }
+
+  .cv { gap:9px; }
+  .cv-top { gap:8px; align-items:center; }
+  .cv-top > div:first-child { display:none; }
+  .cv-toolstoggle { display:inline-flex; align-items:center; gap:6px; background:var(--panel); border:1px solid var(--line); color:var(--tx); font:inherit; font-size:13px; padding:9px 13px; border-radius:9px; cursor:pointer; }
+  .cv-tools { display:none; width:100%; }
+  .cv-tools.open { display:flex; }
+  .cv-search { flex:1; }
+  .cv-search input { width:100%; }
+  .cv-mini { display:none; }
+  .cv-foot { display:none; }
+  .stage { min-height:0; border-radius:12px; }
 }
 .cv-zoom { display:flex; align-items:center; background:var(--panel); border:1px solid var(--line); border-radius:9px; overflow:hidden; }
 .cv-zoom button { width:34px; height:34px; border:none; background:none; color:var(--tx); font-size:18px; cursor:pointer; }
