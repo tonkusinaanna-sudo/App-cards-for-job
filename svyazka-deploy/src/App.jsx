@@ -27,6 +27,9 @@ const SEED = [
   { id: 10, geo: "Индия",     flag: "🇮🇳", pay: "UPI-Gate",       casino: "Rajabets",  trader: "",           method: "UPI",         com: 0.5, link: "rajabets.com",  turn: 4200000,  status: "gas",   owner: "@priya"  },
 ];
 
+// ===== Пароль для входа в приложение (поменяй на свой) =====
+const APP_PASSWORD = "228";
+
 const NAV = [
   { key: "dash", label: "Дашборд", icon: LayoutDashboard },
   { key: "canvas",   label: "Канвас",        icon: Workflow },
@@ -48,20 +51,40 @@ const PLACEHOLDERS = {
 const fmt = (n) => new Intl.NumberFormat("ru-RU").format(n);
 const fmtShort = (n) => n >= 1000000 ? (n / 1000000).toFixed(1).replace(".0", "") + "M" : fmt(n);
 
+// ===== Общая база (Supabase). Все устройства видят одни данные =====
+const SUPABASE_URL = "https://uqnvxyasloxdkoopcpcf.supabase.co";
+const SUPABASE_KEY = "sb_publishable_BBNnb9yJbzUYQJ20vMbIhQ_-uH21i1h";
+const SB_ON = /^https:\/\/.+\.supabase\.co$/.test(SUPABASE_URL) && SUPABASE_KEY.startsWith("sb_");
+const SB_HEADERS = { apikey: SUPABASE_KEY, Authorization: "Bearer " + SUPABASE_KEY, "Content-Type": "application/json" };
+
 const store = {
-  has: () => typeof window !== "undefined" && (!!window.storage || typeof window.localStorage !== "undefined"),
+  has: () => true,
+  cloud: () => SB_ON,
   async get(key, def) {
-    try {
-      if (typeof window !== "undefined" && window.storage) {
-        const r = await window.storage.get(key); return r ? JSON.parse(r.value) : def;
-      }
-      if (typeof window !== "undefined" && window.localStorage) {
-        const v = window.localStorage.getItem(key); return v != null ? JSON.parse(v) : def;
-      }
+    if (SB_ON) {
+      try {
+        const r = await fetch(`${SUPABASE_URL}/rest/v1/app_state?key=eq.${encodeURIComponent(key)}&select=value`, { headers: SB_HEADERS });
+        if (r.ok) { const rows = await r.json(); return rows.length ? rows[0].value : def; }
+      } catch {}
       return def;
-    } catch { return def; }
+    }
+    try {
+      if (typeof window !== "undefined" && window.storage) { const r = await window.storage.get(key); return r ? JSON.parse(r.value) : def; }
+      if (typeof window !== "undefined" && window.localStorage) { const v = window.localStorage.getItem(key); return v != null ? JSON.parse(v) : def; }
+    } catch {}
+    return def;
   },
   async set(key, val) {
+    if (SB_ON) {
+      try {
+        await fetch(`${SUPABASE_URL}/rest/v1/app_state`, {
+          method: "POST",
+          headers: { ...SB_HEADERS, Prefer: "resolution=merge-duplicates" },
+          body: JSON.stringify({ key, value: val, updated_at: new Date().toISOString() }),
+        });
+      } catch {}
+      return;
+    }
     try {
       if (typeof window !== "undefined" && window.storage) { await window.storage.set(key, JSON.stringify(val)); return; }
       if (typeof window !== "undefined" && window.localStorage) { window.localStorage.setItem(key, JSON.stringify(val)); }
@@ -71,6 +94,7 @@ const store = {
 
 export default function App() {
   const [nav, setNav] = useState("dash");
+  const [unlocked, setUnlocked] = useState(() => { try { return localStorage.getItem("svyazka:auth") === "1"; } catch { return false; } });
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [view, setView] = useState("table");
   const [q, setQ] = useState("");
@@ -80,7 +104,7 @@ export default function App() {
   const [showAdd, setShowAdd] = useState(false);
   const [sel, setSel] = useState(null);
   const [ready, setReady] = useState(false);
-  const [confirmReset, setConfirmReset] = useState(false);
+  const [syncTick, setSyncTick] = useState(0);
 
   useEffect(() => {
     (async () => {
@@ -88,21 +112,16 @@ export default function App() {
       if (Array.isArray(saved) && saved.length) setRows(saved);
       setReady(true);
     })();
-  }, []);
+  }, [syncTick]);
   useEffect(() => { if (ready) store.set("registry:rows", rows); }, [rows, ready]);
 
-  const resetData = async () => {
-    setRows(SEED);
-    setSel(null);
-    await store.set("canvas:layout", null);
-    await store.set("canvas:extras", null);
-    await store.set("finance:data", null);
-    await store.set("tasks:data", null);
-    await store.set("crm:data", null);
-    await store.set("kb:data", null);
-    await store.set("kb:offers", null);
-    setConfirmReset(false);
-  };
+  useEffect(() => {
+    if (!store.cloud()) return;
+    const bump = () => { if (document.visibilityState === "visible") setSyncTick((t) => t + 1); };
+    window.addEventListener("focus", bump);
+    document.addEventListener("visibilitychange", bump);
+    return () => { window.removeEventListener("focus", bump); document.removeEventListener("visibilitychange", bump); };
+  }, []);
 
   const geos = useMemo(() => [...new Set(rows.map((r) => r.geo))], [rows]);
 
@@ -143,6 +162,8 @@ export default function App() {
     <div className="app">
       <style>{CSS}</style>
 
+      {!unlocked ? <LockScreen onUnlock={() => { setUnlocked(true); try { localStorage.setItem("svyazka:auth", "1"); } catch {} }} /> : (<>
+
       <div className="mtopbar">
         <button className="menu-btn" onClick={() => setSidebarOpen(true)} aria-label="Меню"><Menu size={20} /></button>
         <div className="mtopbar-brand"><div className="brand-mark sm"><Sparkles size={13} /></div> Связка</div>
@@ -170,18 +191,8 @@ export default function App() {
           })}
         </nav>
         <div className="side-foot">
-          <div className="who"><div className="who-dot" /> <span>{store.has() ? "Автосохранение включено" : "Хранилище недоступно"}</span></div>
-          {confirmReset ? (
-            <div className="reset-confirm">
-              <span>Вернуть демо-данные?</span>
-              <div>
-                <button className="rc-yes" onClick={resetData}>Да</button>
-                <button className="rc-no" onClick={() => setConfirmReset(false)}>Нет</button>
-              </div>
-            </div>
-          ) : (
-            <button className="reset-btn" onClick={() => setConfirmReset(true)}>↺ Сбросить к демо-данным</button>
-          )}
+          <div className="who"><div className="who-dot" /> <span>{store.cloud() ? "Общая база — синхронизировано" : store.has() ? "Автосохранение включено" : "Хранилище недоступно"}</span></div>
+          <button className="logout-btn" onClick={() => { try { localStorage.removeItem("svyazka:auth"); } catch {} setUnlocked(false); }}>Выйти</button>
         </div>
       </aside>
 
@@ -235,12 +246,12 @@ export default function App() {
             )}
           </>
         ) : (
-          nav === "dash" ? <DashboardView rows={rows} onOpenRow={setSel} onGo={setNav} />
+          nav === "dash" ? <DashboardView key={"dash" + syncTick} rows={rows} onOpenRow={setSel} onGo={setNav} />
             : nav === "canvas" ? <CanvasView rows={rows} onOpenRow={setSel} onAddRow={() => setShowAdd(true)} onCreate={createRow} />
-            : nav === "finance" ? <FinanceView rows={rows} />
-              : nav === "tasks" ? <TasksView />
-                : nav === "crm" ? <CRMView rows={rows} />
-                  : nav === "kb" ? <KBView />
+            : nav === "finance" ? <FinanceView key={"fin" + syncTick} rows={rows} />
+              : nav === "tasks" ? <TasksView key={"tasks" + syncTick} />
+                : nav === "crm" ? <CRMView key={"crm" + syncTick} rows={rows} />
+                  : nav === "kb" ? <KBView key={"kb" + syncTick} />
                     : <Placeholder {...PLACEHOLDERS[nav]} />
         )}
       </main>
@@ -255,6 +266,34 @@ export default function App() {
           onDel={(id) => { del(id); setSel(null); }}
         />
       )}
+
+      </>)}
+    </div>
+  );
+}
+
+function LockScreen({ onUnlock }) {
+  const [pw, setPw] = useState("");
+  const [err, setErr] = useState(false);
+  const submit = () => { if (pw === APP_PASSWORD) onUnlock(); else setErr(true); };
+  return (
+    <div className="lock">
+      <div className="lock-card">
+        <div className="lock-brand">
+          <div className="brand-mark"><Sparkles size={18} /></div>
+          <div>
+            <div className="brand-name">Связка</div>
+            <div className="brand-sub">processing ops</div>
+          </div>
+        </div>
+        <p className="lock-text">Введите пароль для входа</p>
+        <input className={"lock-input" + (err ? " err" : "")} type="password" value={pw} autoFocus
+          onChange={(e) => { setPw(e.target.value); setErr(false); }}
+          onKeyDown={(e) => { if (e.key === "Enter") submit(); }}
+          placeholder="Пароль" />
+        {err && <div className="lock-err">Неверный пароль</div>}
+        <button className="btn accent lock-btn" onClick={submit}>Войти</button>
+      </div>
     </div>
   );
 }
@@ -1999,6 +2038,18 @@ const CSS = `
 .rc-yes { background:#f85149; color:#fff; border-color:transparent; }
 .rc-no { background:none; color:var(--mut); }
 .who-dot { width:7px; height:7px; border-radius:50%; background:#3fb950; }
+.logout-btn { background:none; border:none; color:var(--mut2); font:inherit; font-size:11.5px; cursor:pointer; text-align:left; padding:3px 6px; }
+.logout-btn:hover { color:var(--tx); }
+
+.lock { position:absolute; inset:0; display:grid; place-items:center; background:var(--bg); padding:24px; z-index:80; }
+.lock-card { width:320px; max-width:100%; background:var(--panel); border:1px solid var(--line); border-radius:16px; padding:26px 24px; display:flex; flex-direction:column; gap:13px; }
+.lock-brand { display:flex; align-items:center; gap:12px; }
+.lock-text { margin:6px 0 0; color:var(--mut); font-size:13.5px; }
+.lock-input { background:var(--bg); border:1px solid var(--line2); border-radius:9px; padding:11px 13px; color:var(--tx); font:inherit; font-size:15px; outline:none; }
+.lock-input:focus { border-color:var(--acc); }
+.lock-input.err { border-color:#f85149; }
+.lock-err { color:#f85149; font-size:12.5px; margin-top:-6px; }
+.lock-btn { justify-content:center; padding:11px; }
 
 .main { flex:1; min-width:0; overflow-y:auto; padding:24px 28px; }
 .top { display:flex; justify-content:space-between; align-items:flex-start; }
