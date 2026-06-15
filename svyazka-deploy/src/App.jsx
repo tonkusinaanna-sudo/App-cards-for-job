@@ -1039,6 +1039,7 @@ function DetailDrawer({ row, onClose, onUpdate, onStatus, onDel }) {
     <div className="drawer-bg" onClick={onClose}>
       <div className="drawer" onClick={(e) => e.stopPropagation()}>
         <div className="dr-head">
+          <button className="dr-back" onClick={onClose}>← Назад</button>
           <div className="dr-geo"><span className="flag">{row.flag}</span> {row.geo}</div>
           <button className="icon-btn neutral" onClick={onClose}><X size={18} /></button>
         </div>
@@ -2180,10 +2181,11 @@ tbody tr:hover { background:var(--panel); }
 .kcard { cursor:pointer; }
 .icon-btn.neutral:hover { color:var(--tx); background:var(--panel2); }
 
-.drawer-bg { position:absolute; inset:0; background:rgba(5,7,11,.6); display:flex; justify-content:flex-end; z-index:20; }
+.drawer-bg { position:absolute; inset:0; background:rgba(5,7,11,.6); display:flex; justify-content:flex-end; z-index:70; }
 .drawer { width:440px; max-width:100%; height:100%; background:var(--panel); border-left:1px solid var(--line2); display:flex; flex-direction:column; animation:slidein .18s ease; }
 @keyframes slidein { from { transform:translateX(34px); opacity:.3; } to { transform:translateX(0); opacity:1; } }
-.dr-head { display:flex; justify-content:space-between; align-items:center; padding:16px 20px 0; }
+.dr-head { display:flex; justify-content:space-between; align-items:center; gap:10px; padding:14px 18px 12px; position:sticky; top:0; z-index:3; background:var(--panel); border-bottom:1px solid var(--line); }
+.dr-back { display:none; }
 .dr-geo { display:flex; align-items:center; gap:8px; font-size:13px; color:var(--mut); }
 .dr-title { display:flex; align-items:center; gap:9px; padding:9px 20px 0; font-size:18px; font-weight:700; flex-wrap:wrap; letter-spacing:-.3px; }
 .dr-title span { color:var(--mut); font-weight:600; }
@@ -2431,6 +2433,7 @@ tbody tr:hover { background:var(--panel); }
   .cv-mini { display:none; }
   .cv-foot { display:none; }
   .stage { min-height:0; border-radius:12px; }
+  .dr-back { display:inline-flex; align-items:center; gap:5px; background:var(--panel2); border:1px solid var(--line2); color:var(--tx); font:inherit; font-size:13.5px; font-weight:600; padding:8px 13px; border-radius:9px; cursor:pointer; }
 }
 .cv-zoom { display:flex; align-items:center; background:var(--panel); border:1px solid var(--line); border-radius:9px; overflow:hidden; }
 .cv-zoom button { width:34px; height:34px; border:none; background:none; color:var(--tx); font-size:18px; cursor:pointer; }
